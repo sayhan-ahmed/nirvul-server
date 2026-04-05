@@ -20,6 +20,7 @@ mongoose.connect(process.env.MONGODB_URI)
 
 
 const User = require('./models/User');
+const Result = require('./models/Result');
 
 // Basic Route
 app.get('/', (req, res) => {
@@ -51,6 +52,69 @@ app.post('/api/users', async (req, res) => {
         res.json(user);
     } catch (err) {
         console.error('Error in user sync:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Save Test Result
+app.post('/api/results', async (req, res) => {
+    const { userUid, subject, score, totalPoints } = req.body;
+    try {
+        const status = (score / totalPoints) >= 0.5 ? 'Passed' : 'Improve';
+        const newResult = new Result({
+            userUid,
+            subject,
+            score,
+            totalPoints,
+            status
+        });
+        await newResult.save();
+        res.json(newResult);
+    } catch (err) {
+        console.error('Error saving result:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Get Student Dashboard Stats
+app.get('/api/results/dashboard/:uid', async (req, res) => {
+    const { uid } = req.params;
+    try {
+        const results = await Result.find({ userUid: uid }).sort({ date: -1 });
+        
+        const totalTests = results.length;
+        const totalScorePercent = results.reduce((acc, curr) => acc + (curr.score / curr.totalPoints), 0);
+        const averageScore = totalTests > 0 ? Math.round((totalScorePercent / totalTests) * 100) : 0;
+        
+        // Subject-wise Average for Proficiency Graph
+        const subjectStats = await Result.aggregate([
+            { $match: { userUid: uid } },
+            { $group: { 
+                _id: "$subject", 
+                avg: { $avg: { $multiply: [{ $divide: ["$score", "$totalPoints"] }, 100] } } 
+            }}
+        ]);
+
+        const recentTests = results.slice(0, 5).map(r => ({
+            name: `${r.subject} MCQ Mock`,
+            date: new Date(r.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+            score: `${r.score}/${r.totalPoints}`,
+            status: r.status
+        }));
+
+        res.json({
+            stats: {
+                totalTests,
+                averageScore
+            },
+            subjectStats: subjectStats.map(s => ({
+                subject: s._id,
+                score: Math.round(s.avg)
+            })),
+            recentTests
+        });
+    } catch (err) {
+        console.error('Error fetching dashboard stats:', err);
         res.status(500).json({ error: 'Server error' });
     }
 });
