@@ -58,12 +58,14 @@ app.post('/api/users', async (req, res) => {
 
 // Save Test Result
 app.post('/api/results', async (req, res) => {
-    const { userUid, subject, score, totalPoints } = req.body;
+    const { userUid, subject, testId, testName, score, totalPoints } = req.body;
     try {
         const status = (score / totalPoints) >= 0.5 ? 'Passed' : 'Improve';
         const newResult = new Result({
             userUid,
             subject,
+            testId,
+            testName,
             score,
             totalPoints,
             status
@@ -72,6 +74,18 @@ app.post('/api/results', async (req, res) => {
         res.json(newResult);
     } catch (err) {
         console.error('Error saving result:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Get User History for Specific Test Lockout/Scores
+app.get('/api/results/user/:uid', async (req, res) => {
+    const { uid } = req.params;
+    try {
+        const results = await Result.find({ userUid: uid }).sort({ date: -1 });
+        res.json(results);
+    } catch (err) {
+        console.error('Error fetching user results:', err);
         res.status(500).json({ error: 'Server error' });
     }
 });
