@@ -129,10 +129,86 @@ app.get('/api/results/dashboard/:uid', async (req, res) => {
                 subject: s._id,
                 score: Math.round(s.avg)
             })),
-            recentTests
         });
     } catch (err) {
         console.error('Error fetching dashboard stats:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Admin Dashboard Stats API
+app.get('/api/admin/dashboard-stats', async (req, res) => {
+    try {
+        // 1. Total Students
+        const totalStudents = await User.countDocuments({ role: 'student' });
+        
+        // 2. Active Courses (Unique subjects tested)
+        const activeCourses = await Result.distinct('subject');
+        
+        // 3. Skill Graph (Global Subject Averages)
+        const skillGraphData = await Result.aggregate([
+            { $group: { 
+                _id: "$subject", 
+                avgScore: { $avg: { $multiply: [{ $divide: ["$score", "$totalPoints"] }, 100] } } 
+            }},
+            { $limit: 5 } // Top 5 for radar chart
+        ]);
+
+        // 4. Top Members (Ranking by average performance)
+        const topMembersRaw = await Result.aggregate([
+            { $group: {
+                _id: "$userUid",
+                avgScore: { $avg: { $multiply: [{ $divide: ["$score", "$totalPoints"] }, 100] } },
+                testCount: { $sum: 1 }
+            }},
+            { $sort: { avgScore: -1 } },
+            { $limit: 10 },
+            { $lookup: {
+                from: "users",
+                localField: "_id",
+                foreignField: "uid",
+                as: "userDetails"
+            }}
+        ]);
+
+        const topMembers = topMembersRaw.map(m => ({
+            name: m.userDetails[0]?.displayName || "Unknown Student",
+            photoURL: m.userDetails[0]?.photoURL || null,
+            score: Math.round(m.avgScore),
+            color: m.avgScore >= 80 ? 'bg-purple-100 text-purple-600' : 'bg-orange-100 text-orange-600'
+        }));
+
+        // 5. Exam Progress (Last 7 days usage)
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+        const progressDataRaw = await Result.aggregate([
+            { $match: { date: { $gte: sevenDaysAgo } } },
+            { $group: {
+                _id: { $dateToString: { format: "%Y-%m-%d", date: "$date" } },
+                count: { $sum: 1 }
+            }},
+            { $sort: { "_id": 1 } }
+        ]);
+
+        res.json({
+            stats: {
+                totalStudents: totalStudents || 0,
+                activeCourses: activeCourses.length || 0
+            },
+            skillGraph: skillGraphData.map(s => ({
+                subject: s._id,
+                score: Math.round(s.avgScore)
+            })),
+            topMembers,
+            progress: progressDataRaw.map(p => ({
+                label: new Date(p._id).toLocaleDateString('en-US', { weekday: 'short' }),
+                value: p.count
+            }))
+        });
+
+    } catch (err) {
+        console.error('Error fetching admin stats:', err);
         res.status(500).json({ error: 'Server error' });
     }
 });
