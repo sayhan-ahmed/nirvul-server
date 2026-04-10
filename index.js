@@ -91,7 +91,7 @@ app.get('/api/results/user/:uid', async (req, res) => {
     }
 });
 
-// Get Student Dashboard Stats
+// Get Student Dashboard Stats & Profile Data
 app.get('/api/results/dashboard/:uid', async (req, res) => {
     const { uid } = req.params;
     try {
@@ -101,8 +101,28 @@ app.get('/api/results/dashboard/:uid', async (req, res) => {
         const totalScorePercent = results.reduce((acc, curr) => acc + (curr.score / curr.totalPoints), 0);
         const averageScore = totalTests > 0 ? Math.round((totalScorePercent / totalTests) * 100) : 0;
         
-        // Subject-wise Average for Proficiency Graph
-        const subjectStats = await Result.aggregate([
+        // 1. Calculate Global Rank
+        const allUsersRank = await Result.aggregate([
+            { $group: { 
+                _id: "$userUid", 
+                avgScore: { $avg: { $multiply: [{ $divide: ["$score", "$totalPoints"] }, 100] } } 
+            }},
+            { $sort: { avgScore: -1 } }
+        ]);
+        
+        const rankIndex = allUsersRank.findIndex(r => r._id === uid);
+        const globalRank = rankIndex !== -1 ? rankIndex + 1 : 0;
+        const totalStudents = allUsersRank.length;
+
+        // 2. Achievement Milestones detection
+        const achievements = [];
+        if (totalTests >= 1) achievements.push({ id: 'early_bird', title: 'Early Bird', icon: '🐣', description: 'Completed your first exam!' });
+        if (results.some(r => (r.score / r.totalPoints) >= 0.8)) achievements.push({ id: 'expert', title: 'Expert', icon: '🏆', description: 'Scored over 80% in an exam!' });
+        if (totalTests >= 5) achievements.push({ id: 'consistent', title: 'Consistent', icon: '🔥', description: 'Completed 5+ exams!' });
+        if (results.some(r => r.score === r.totalPoints)) achievements.push({ id: 'perfect', title: 'Perfect', icon: '✨', description: 'Achieved a perfect score!' });
+
+        // 3. Subject-wise Average for Proficiency Graph
+        const subjectStatsRaw = await Result.aggregate([
             { $match: { userUid: uid } },
             { $group: { 
                 _id: "$subject", 
@@ -110,7 +130,14 @@ app.get('/api/results/dashboard/:uid', async (req, res) => {
             }}
         ]);
 
-        const recentTests = results.slice(0, 5).map(r => ({
+        const subjectStats = subjectStatsRaw.map(s => ({
+            subject: s._id,
+            score: Math.round(s.avg),
+            status: s.avg >= 80 ? 'Strength' : s.avg < 50 ? 'Needs Improvement' : 'Stable'
+        }));
+
+        // 4. All Tests History (for profile table)
+        const allTests = results.map(r => ({
             name: `${r.subject}: ${r.testName || 'Mock Test'}`,
             version: r.version || 'BV',
             testId: r.testId,
@@ -123,12 +150,13 @@ app.get('/api/results/dashboard/:uid', async (req, res) => {
         res.json({
             stats: {
                 totalTests,
-                averageScore
+                averageScore,
+                globalRank,
+                totalStudents
             },
-            subjectStats: subjectStats.map(s => ({
-                subject: s._id,
-                score: Math.round(s.avg)
-            })),
+            achievements,
+            subjectStats,
+            allTests
         });
     } catch (err) {
         console.error('Error fetching dashboard stats:', err);

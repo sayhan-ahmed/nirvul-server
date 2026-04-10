@@ -22,6 +22,14 @@ const userSchema = new mongoose.Schema({
         enum: ['student', 'admin'],
         default: 'student'
     },
+    institution: {
+        type: String,
+        default: ''
+    },
+    location: {
+        type: String,
+        default: ''
+    },
     createdAt: {
         type: Date,
         default: Date.now
