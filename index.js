@@ -57,6 +57,51 @@ app.post('/api/users', async (req, res) => {
     }
 });
 
+// Update User Profile API
+app.patch('/api/users/:uid', async (req, res) => {
+    const { uid } = req.params;
+    const { institution, location, bio, guardianName, guardianContact } = req.body;
+    try {
+        const user = await User.findOneAndUpdate(
+            { uid },
+            { 
+                $set: { 
+                    institution, 
+                    location, 
+                    bio, 
+                    guardianName, 
+                    guardianContact 
+                } 
+            },
+            { new: true }
+        );
+        
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        
+        res.json(user);
+    } catch (err) {
+        console.error('Error updating profile:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Get User Profile API
+app.get('/api/users/:uid', async (req, res) => {
+    const { uid } = req.params;
+    try {
+        const user = await User.findOne({ uid });
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        res.json(user);
+    } catch (err) {
+        console.error('Error fetching user:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
 // Save Test Result
 app.post('/api/results', async (req, res) => {
     const { userUid, subject, testId, testName, score, totalPoints } = req.body;
