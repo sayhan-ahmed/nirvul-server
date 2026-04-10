@@ -126,13 +126,16 @@ app.get('/api/results/dashboard/:uid', async (req, res) => {
             { $match: { userUid: uid } },
             { $group: { 
                 _id: "$subject", 
-                avg: { $avg: { $multiply: [{ $divide: ["$score", "$totalPoints"] }, 100] } } 
+                avg: { $avg: { $multiply: [{ $divide: ["$score", "$totalPoints"] }, 100] } },
+                count: { $sum: 1 },
+                total: { $sum: { $multiply: [{ $divide: ["$score", "$totalPoints"] }, 100] } }
             }}
         ]);
 
         const subjectStats = subjectStatsRaw.map(s => ({
             subject: s._id,
             score: Math.round(s.avg),
+            attempts: s.count,
             status: s.avg >= 80 ? 'Strength' : s.avg < 50 ? 'Needs Improvement' : 'Stable'
         }));
 
@@ -147,16 +150,45 @@ app.get('/api/results/dashboard/:uid', async (req, res) => {
             percentage: Math.round((r.score / r.totalPoints) * 100)
         }));
 
+        // 6. Calculate Last 7 Days Activity & Current Streak
+        const last7Days = [];
+        let currentStreak = 0;
+        let streakBroken = false;
+        
+        for (let i = 0; i < 7; i++) {
+            const date = new Date();
+            date.setDate(date.getDate() - i);
+            const dateStr = date.toISOString().split('T')[0];
+            
+            const hasActivity = results.some(r => {
+                const testDate = new Date(r.date || r.createdAt).toISOString().split('T')[0];
+                return testDate === dateStr;
+            });
+            
+            last7Days.unshift({
+                day: date.toLocaleDateString('en-US', { weekday: 'short' }).charAt(0),
+                active: hasActivity
+            });
+
+            if (hasActivity && !streakBroken) {
+                currentStreak++;
+            } else if (i > 0 && !hasActivity) {
+                streakBroken = true;
+            }
+        }
+
         res.json({
             stats: {
                 totalTests,
                 averageScore,
                 globalRank,
-                totalStudents
+                totalStudents,
+                currentStreak
             },
             achievements,
             subjectStats,
-            allTests
+            allTests,
+            streak: last7Days
         });
     } catch (err) {
         console.error('Error fetching dashboard stats:', err);
