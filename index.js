@@ -68,7 +68,8 @@ app.post('/api/results', async (req, res) => {
             testName,
             score,
             totalPoints,
-            status
+            status: (score / totalPoints) >= 0.8 ? 'Passed' : 'Improve',
+            version: req.body.version
         });
         await newResult.save();
         res.json(newResult);
@@ -110,10 +111,13 @@ app.get('/api/results/dashboard/:uid', async (req, res) => {
         ]);
 
         const recentTests = results.slice(0, 5).map(r => ({
-            name: `${r.subject} MCQ Mock`,
+            name: `${r.subject}: ${r.testName || 'Mock Test'}`,
+            version: r.version || 'BV',
+            testId: r.testId,
+            rawDate: r.date,
             date: new Date(r.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
             score: `${r.score}/${r.totalPoints}`,
-            status: r.status
+            percentage: Math.round((r.score / r.totalPoints) * 100)
         }));
 
         res.json({

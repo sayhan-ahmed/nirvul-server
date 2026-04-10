@@ -32,6 +32,11 @@ const resultSchema = new mongoose.Schema({
         enum: ['Passed', 'Improve'],
         required: true
     },
+    version: {
+        type: String,
+        enum: ['EV', 'BV'],
+        required: false
+    },
     date: {
         type: Date,
         default: Date.now
