@@ -30,6 +30,18 @@ const userSchema = new mongoose.Schema({
         type: String,
         default: ''
     },
+    bio: {
+        type: String,
+        default: ''
+    },
+    guardianName: {
+        type: String,
+        default: ''
+    },
+    guardianContact: {
+        type: String,
+        default: ''
+    },
     createdAt: {
         type: Date,
         default: Date.now
