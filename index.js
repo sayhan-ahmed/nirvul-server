@@ -20,6 +20,7 @@ mongoose.connect(process.env.MONGODB_URI)
 
 
 const User = require('./models/User');
+const ExamRecord = require('./models/ExamRecord');
 const Result = require('./models/Result');
 
 // Basic Route
@@ -138,6 +139,11 @@ app.get('/api/results/dashboard/:uid', async (req, res) => {
             attempts: s.count,
             status: s.avg >= 80 ? 'Strength' : s.avg < 50 ? 'Needs Improvement' : 'Stable'
         }));
+        
+        // 3.5 Calculate Global Total Tests (from unique testIds/testNames in all records)
+        const allExamRecords = await ExamRecord.find({});
+        const uniqueTestIds = [...new Set(allExamRecords.map(r => r.testId))];
+        const totalUniqueTests = uniqueTestIds.length || 0;
 
         // 4. All Tests History (for profile table)
         const allTests = results.map(r => ({
@@ -177,13 +183,47 @@ app.get('/api/results/dashboard/:uid', async (req, res) => {
             }
         }
 
+        // 5. Aggregate ExamRecord Stats (Total Questions, Correct, Incorrect)
+        const examRecords = await ExamRecord.find({ studentUid: uid });
+        let totalQuestionsAttempted = 0;
+        let totalCorrect = 0;
+        let totalIncorrect = 0;
+        let questionsLast7Days = 0;
+        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+        examRecords.forEach(record => {
+            totalQuestionsAttempted += record.totalQuestions;
+            
+            // Last 7 days trend
+            if (new Date(record.createdAt) >= sevenDaysAgo) {
+                questionsLast7Days += record.totalQuestions;
+            }
+
+            record.submittedAnswers.forEach(ans => {
+                if (ans.isCorrect) totalCorrect++;
+                else totalIncorrect++;
+            });
+        });
+
+        const questAccuracy = totalQuestionsAttempted > 0 
+            ? Math.round((totalCorrect / totalQuestionsAttempted) * 100) 
+            : 0;
+
         res.json({
             stats: {
                 totalTests,
                 averageScore,
                 globalRank,
                 totalStudents,
-                currentStreak
+                currentStreak,
+                totalUniqueTests
+            },
+            attemptAnalysis: {
+                totalQuestionsAttempted,
+                totalCorrect,
+                totalIncorrect,
+                accuracy: questAccuracy,
+                last7DaysTrend: questionsLast7Days
             },
             achievements,
             subjectStats,
